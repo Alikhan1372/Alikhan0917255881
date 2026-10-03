@@ -1,0 +1,6 @@
+{
+  "name": "مدیریت تجهیزات",
+  "description": "سامانه مدیریت داخلی تجهیزات، ساعت کاری، سرویس، تعویض روغن و انبار",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

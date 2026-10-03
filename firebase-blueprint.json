@@ -1,0 +1,211 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user account with role and assigned equipment",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique user ID" },
+        "username": { "type": "string", "description": "Login username" },
+        "displayName": { "type": "string", "description": "Display name editable by user" },
+        "role": { "type": "string", "enum": ["representative", "driver", "technical_manager"], "description": "Role in organization" },
+        "assignedEquipmentId": { "type": "string", "description": "Optional assigned equipment ID" },
+        "active": { "type": "boolean", "description": "Whether user is active" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" }
+      },
+      "required": ["userId", "username", "displayName", "role", "active"]
+    },
+    "Equipment": {
+      "title": "Equipment",
+      "description": "Predefined equipment specifications and rules",
+      "type": "object",
+      "properties": {
+        "equipmentId": { "type": "string", "description": "Unique equipment identifier" },
+        "name": { "type": "string", "description": "Persian equipment name" },
+        "category": { "type": "string", "enum": ["generator", "compressor_electric", "compressor_diesel", "machinery"], "description": "Equipment category" },
+        "hasWorkHours": { "type": "boolean", "description": "Tracks daily work hours" },
+        "hasEngineOil": { "type": "boolean", "description": "Requires engine oil and oil changes" },
+        "hasRadiator": { "type": "boolean", "description": "Has radiator water check" },
+        "hasGearboxOil": { "type": "boolean", "description": "Has gearbox oil check" },
+        "hasGrease": { "type": "boolean", "description": "Has greasing requirement" },
+        "hasHydraulicOverflow": { "type": "boolean", "description": "Has hydraulic overflow option" },
+        "driverName": { "type": "string", "description": "Assigned driver or representative name" },
+        "driverRole": { "type": "string", "description": "Assigned driver or representative role" }
+      },
+      "required": ["equipmentId", "name", "category", "hasWorkHours", "hasEngineOil"]
+    },
+    "DailyWorkHour": {
+      "title": "DailyWorkHour",
+      "description": "Actual daily operating hours for an equipment",
+      "type": "object",
+      "properties": {
+        "recordId": { "type": "string", "description": "equipmentId_date composite key" },
+        "equipmentId": { "type": "string", "description": "Equipment identifier" },
+        "date": { "type": "string", "description": "Work date in YYYY-MM-DD format" },
+        "hours": { "type": "number", "description": "Operating hours between 0 and 12" },
+        "userId": { "type": "string", "description": "Author user ID" },
+        "displayNameSnapshot": { "type": "string", "description": "Author display name snapshot" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" }
+      },
+      "required": ["recordId", "equipmentId", "date", "hours", "userId", "displayNameSnapshot", "createdAt"]
+    },
+    "DailyService": {
+      "title": "DailyService",
+      "description": "Daily maintenance checklist and notes",
+      "type": "object",
+      "properties": {
+        "recordId": { "type": "string", "description": "equipmentId_date composite key" },
+        "equipmentId": { "type": "string", "description": "Equipment identifier" },
+        "date": { "type": "string", "description": "Service date in YYYY-MM-DD format" },
+        "checkEngineOil": { "type": "boolean", "description": "Engine oil level checked" },
+        "checkGearboxOil": { "type": "boolean", "description": "Gearbox oil level checked" },
+        "checkHydraulicOil": { "type": "boolean", "description": "Hydraulic oil level checked" },
+        "checkOilLeaks": { "type": "boolean", "description": "Oil leaks checked" },
+        "oilLeaksNotes": { "type": "string", "description": "Optional notes on oil leaks" },
+        "checkRadiatorWater": { "type": "boolean", "description": "Radiator water checked" },
+        "checkHoses": { "type": "boolean", "description": "Hoses and connections checked" },
+        "hosesNotes": { "type": "string", "description": "Optional notes on hoses" },
+        "checkAirCleaning": { "type": "boolean", "description": "Complete blowing/air cleaning" },
+        "checkAirFilter": { "type": "boolean", "description": "Air filter cleaning" },
+        "checkGreasing": { "type": "boolean", "description": "Greasing completed" },
+        "checkWashing": { "type": "boolean", "description": "Washing completed" },
+        "checkCabinCleaning": { "type": "boolean", "description": "Cabin cleaning completed" },
+        "userId": { "type": "string", "description": "Technical manager user ID" },
+        "displayNameSnapshot": { "type": "string", "description": "Technical manager name snapshot" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" }
+      },
+      "required": ["recordId", "equipmentId", "date", "userId", "displayNameSnapshot", "createdAt"]
+    },
+    "OilChange": {
+      "title": "OilChange",
+      "description": "Engine oil change transaction and maintenance checklist",
+      "type": "object",
+      "properties": {
+        "recordId": { "type": "string", "description": "Unique oil change record ID" },
+        "equipmentId": { "type": "string", "description": "Equipment identifier" },
+        "date": { "type": "string", "description": "Date of oil change" },
+        "time": { "type": "string", "description": "Time of oil change" },
+        "accumulatedHours": { "type": "number", "description": "Cumulative work hours baseline" },
+        "oilAmountLiters": { "type": "number", "description": "Engine oil consumed in liters" },
+        "dieselFilter": { "type": "boolean", "description": "Diesel filter replaced" },
+        "oilFilter": { "type": "boolean", "description": "Oil filter replaced" },
+        "waterSeparatorFilter": { "type": "boolean", "description": "Water separator filter replaced" },
+        "notes": { "type": "string", "description": "Optional notes" },
+        "userId": { "type": "string", "description": "User ID who performed change" },
+        "displayNameSnapshot": { "type": "string", "description": "User display name snapshot" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" }
+      },
+      "required": ["recordId", "equipmentId", "date", "accumulatedHours", "oilAmountLiters", "userId", "displayNameSnapshot", "createdAt"]
+    },
+    "OilTransaction": {
+      "title": "OilTransaction",
+      "description": "Immutable ledger entry for oil inventory movements",
+      "type": "object",
+      "properties": {
+        "transactionId": { "type": "string", "description": "Unique transaction ID" },
+        "oilType": { "type": "string", "enum": ["engine_oil_20w50", "hydraulic_oil_1068"], "description": "Type of oil" },
+        "direction": { "type": "string", "enum": ["in", "out"], "description": "Movement direction" },
+        "amountLiters": { "type": "number", "description": "Quantity in liters" },
+        "equipmentId": { "type": "string", "description": "Optional related equipment" },
+        "sourceOperation": { "type": "string", "enum": ["initial", "incoming", "oil_change", "service_engine", "service_gearbox", "service_hydraulic", "hydraulic_overflow", "adjustment"], "description": "Source business operation" },
+        "sourceOperationId": { "type": "string", "description": "Optional related operation ID" },
+        "reason": { "type": "string", "description": "Human readable reason" },
+        "date": { "type": "string", "description": "Transaction date" },
+        "time": { "type": "string", "description": "Transaction time" },
+        "notes": { "type": "string", "description": "Optional notes" },
+        "userId": { "type": "string", "description": "Author user ID" },
+        "displayNameSnapshot": { "type": "string", "description": "Author display name snapshot" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" }
+      },
+      "required": ["transactionId", "oilType", "direction", "amountLiters", "sourceOperation", "reason", "userId", "displayNameSnapshot", "createdAt"]
+    },
+    "Inventory": {
+      "title": "Inventory",
+      "description": "Current on-hand stock for an oil type",
+      "type": "object",
+      "properties": {
+        "oilType": { "type": "string", "enum": ["engine_oil_20w50", "hydraulic_oil_1068"], "description": "Oil type identifier" },
+        "oilTypeName": { "type": "string", "description": "Display name of oil" },
+        "currentAmountLiters": { "type": "number", "description": "Current available liters, >= 0" },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["oilType", "oilTypeName", "currentAmountLiters", "lastUpdated"]
+    },
+    "MonthlyReport": {
+      "title": "MonthlyReport",
+      "description": "Immutable closed month summary snapshot for an equipment",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string", "description": "month_equipmentId composite key" },
+        "month": { "type": "string", "description": "Jalali or ISO month string" },
+        "equipmentId": { "type": "string", "description": "Equipment ID" },
+        "equipmentName": { "type": "string", "description": "Equipment name" },
+        "totalWorkHours": { "type": "number", "description": "Sum of work hours in month" },
+        "workHoursCount": { "type": "number", "description": "Number of work days logged" },
+        "dailyServicesCount": { "type": "number", "description": "Number of daily services" },
+        "oilChangesCount": { "type": "number", "description": "Number of oil changes" },
+        "totalOilConsumed": { "type": "number", "description": "Total oil consumed in liters" },
+        "snapshotDataJson": { "type": "string", "description": "Immutable full JSON snapshot" },
+        "closedByUserId": { "type": "string", "description": "Closing technical manager ID" },
+        "closedByDisplayName": { "type": "string", "description": "Closing technical manager name" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" }
+      },
+      "required": ["reportId", "month", "equipmentId", "totalWorkHours", "snapshotDataJson", "closedByUserId", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Audit trail for critical modifications by technical manager",
+      "type": "object",
+      "properties": {
+        "auditId": { "type": "string", "description": "Unique audit ID" },
+        "entityType": { "type": "string", "description": "Modified entity name" },
+        "entityId": { "type": "string", "description": "Modified entity record ID" },
+        "action": { "type": "string", "description": "Action performed (e.g. edit_oil_amount)" },
+        "oldValueJson": { "type": "string", "description": "Previous value snapshot" },
+        "newValueJson": { "type": "string", "description": "New value snapshot" },
+        "userId": { "type": "string", "description": "Technical manager user ID" },
+        "displayName": { "type": "string", "description": "Technical manager display name" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" }
+      },
+      "required": ["auditId", "entityType", "entityId", "action", "userId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles and credentials mappings"
+    },
+    "/equipment/{equipmentId}": {
+      "schema": { "$ref": "#/entities/Equipment" },
+      "description": "Predefined equipment definitions"
+    },
+    "/daily_work_hours/{recordId}": {
+      "schema": { "$ref": "#/entities/DailyWorkHour" },
+      "description": "Operating hours logged per equipment per date"
+    },
+    "/daily_services/{recordId}": {
+      "schema": { "$ref": "#/entities/DailyService" },
+      "description": "Daily inspection checklists"
+    },
+    "/oil_changes/{recordId}": {
+      "schema": { "$ref": "#/entities/OilChange" },
+      "description": "Engine oil change records"
+    },
+    "/oil_transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/OilTransaction" },
+      "description": "Oil inventory movement ledger"
+    },
+    "/inventory/{oilType}": {
+      "schema": { "$ref": "#/entities/Inventory" },
+      "description": "Realtime stock levels for oil types"
+    },
+    "/monthly_reports/{reportId}": {
+      "schema": { "$ref": "#/entities/MonthlyReport" },
+      "description": "Closed monthly archive summaries"
+    },
+    "/audit_logs/{auditId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Audit trail entries"
+    }
+  }
+}

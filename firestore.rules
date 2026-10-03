@@ -1,0 +1,219 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Core Security Helpers ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function hasUserDoc(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function getUserDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isTechnicalManager() {
+      return isAuthenticated() && hasUserDoc(request.auth.uid) && getUserDoc(request.auth.uid).role == 'technical_manager';
+    }
+
+    function isRepresentative() {
+      return isAuthenticated() && hasUserDoc(request.auth.uid) && getUserDoc(request.auth.uid).role == 'representative';
+    }
+
+    function isDriver() {
+      return isAuthenticated() && hasUserDoc(request.auth.uid) && getUserDoc(request.auth.uid).role == 'driver';
+    }
+
+    function assignedEquip() {
+      return getUserDoc(request.auth.uid).assignedEquipmentId;
+    }
+
+    function canLogWorkHours(equipId) {
+      return isTechnicalManager() 
+        || isRepresentative()
+        || (isDriver() && assignedEquip() == equipId);
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidUser(data) {
+      return data.userId is string && data.userId.size() > 0
+        && data.username is string && data.username.size() > 0
+        && data.displayName is string && data.displayName.size() > 0
+        && (data.role == 'representative' || data.role == 'driver' || data.role == 'technical_manager')
+        && data.active is bool;
+    }
+
+    function isValidEquipment(data) {
+      return data.equipmentId is string && data.equipmentId.size() > 0
+        && data.name is string && data.name.size() > 0
+        && data.category is string
+        && data.hasWorkHours is bool
+        && data.hasEngineOil is bool;
+    }
+
+    function isValidDailyWorkHour(data) {
+      return data.recordId is string && data.recordId.size() > 0
+        && data.equipmentId is string && data.equipmentId.size() > 0
+        && data.date is string && data.date.size() > 0
+        && data.hours is number && data.hours >= 0 && data.hours <= 12
+        && data.userId is string && data.userId.size() > 0
+        && data.displayNameSnapshot is string;
+    }
+
+    function isValidDailyService(data) {
+      return data.recordId is string && data.recordId.size() > 0
+        && data.equipmentId is string && data.equipmentId.size() > 0
+        && data.date is string && data.date.size() > 0
+        && data.userId is string && data.userId.size() > 0
+        && data.displayNameSnapshot is string;
+    }
+
+    function isValidOilChange(data) {
+      return data.recordId is string && data.recordId.size() > 0
+        && data.equipmentId is string && data.equipmentId.size() > 0
+        && data.date is string && data.date.size() > 0
+        && data.accumulatedHours is number && data.accumulatedHours >= 0
+        && data.oilAmountLiters is number && data.oilAmountLiters > 0
+        && data.userId is string && data.userId.size() > 0
+        && data.displayNameSnapshot is string;
+    }
+
+    function isValidOilTransaction(data) {
+      return data.transactionId is string && data.transactionId.size() > 0
+        && (data.oilType == 'engine_oil_20w50' || data.oilType == 'hydraulic_oil_1068')
+        && (data.direction == 'in' || data.direction == 'out')
+        && data.amountLiters is number && data.amountLiters > 0
+        && data.sourceOperation is string
+        && data.reason is string
+        && data.userId is string && data.userId.size() > 0
+        && data.displayNameSnapshot is string;
+    }
+
+    function isValidInventory(data) {
+      return (data.oilType == 'engine_oil_20w50' || data.oilType == 'hydraulic_oil_1068')
+        && data.currentAmountLiters is number && data.currentAmountLiters >= 0;
+    }
+
+    function isValidMonthlyReport(data) {
+      return data.reportId is string && data.reportId.size() > 0
+        && data.month is string && data.month.size() > 0
+        && data.equipmentId is string && data.equipmentId.size() > 0
+        && data.totalWorkHours is number && data.totalWorkHours >= 0
+        && data.snapshotDataJson is string && data.snapshotDataJson.size() > 0
+        && data.closedByUserId is string && data.closedByUserId.size() > 0;
+    }
+
+    function isValidAuditLog(data) {
+      return data.auditId is string && data.auditId.size() > 0
+        && data.entityType is string && data.entityType.size() > 0
+        && data.entityId is string && data.entityId.size() > 0
+        && data.action is string && data.action.size() > 0
+        && data.userId is string && data.userId.size() > 0;
+    }
+
+    // --- Strict Collection Rules (Default Deny, No Unauthenticated Access) ---
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(incoming());
+      allow update: if isAuthenticated() && isValidUser(incoming()) && (isTechnicalManager() || request.auth.uid == userId);
+      allow delete: if false;
+    }
+
+    // 2. Equipment collection
+    match /equipment/{equipmentId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidEquipment(incoming()) && (isTechnicalManager() || isRepresentative());
+      allow delete: if false;
+    }
+
+    // 3. Inventory collection
+    match /inventory/{oilType} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidInventory(incoming()) && (isTechnicalManager() || isRepresentative());
+      allow delete: if false;
+    }
+
+    // 4. Daily Work Hours
+    match /daily_work_hours/{recordId} {
+      // Driver can only read work hours of their assigned equipment; Representative and Tech Manager read all
+      allow read: if isAuthenticated() && (isTechnicalManager() || isRepresentative() || (isDriver() && resource.data.equipmentId == assignedEquip()));
+      // Driver can only log for their assigned equipment; Representative and Tech Manager for all
+      allow create: if isAuthenticated() 
+        && isValidDailyWorkHour(incoming())
+        && canLogWorkHours(incoming().equipmentId);
+      // Immutable: cannot be modified or deleted once recorded
+      allow update, delete: if false;
+    }
+
+    // 5. Daily Services
+    match /daily_services/{recordId} {
+      allow read: if isAuthenticated();
+      // Only Technical Manager can create or update daily services
+      allow create, update: if isAuthenticated() 
+        && isValidDailyService(incoming())
+        && isTechnicalManager();
+      allow delete: if false;
+    }
+
+    // 6. Oil Changes
+    match /oil_changes/{recordId} {
+      allow read: if isAuthenticated();
+      // Only Technical Manager can record oil changes
+      allow create, update: if isAuthenticated() 
+        && isValidOilChange(incoming())
+        && isTechnicalManager();
+      allow delete: if false;
+    }
+
+    // 7. Oil Transactions
+    match /oil_transactions/{transactionId} {
+      allow read: if isAuthenticated();
+      // Representative and Technical Manager can log incoming oil;
+      // Hydraulic overflow allowed for equipment drivers; other outflows strictly Technical Manager
+      allow create: if isAuthenticated() 
+        && isValidOilTransaction(incoming())
+        && (incoming().direction == 'in' 
+            ? (isRepresentative() || isTechnicalManager())
+            : (incoming().sourceOperation == 'hydraulic_overflow' ? (isDriver() || isRepresentative() || isTechnicalManager()) : isTechnicalManager()));
+      // Controlled update only allowed by Technical Manager
+      allow update: if isAuthenticated() 
+        && isValidOilTransaction(incoming())
+        && isTechnicalManager();
+      // Strictly non-deletable
+      allow delete: if false;
+    }
+
+    // 8. Monthly Reports
+    match /monthly_reports/{reportId} {
+      allow read: if isAuthenticated();
+      // Only Technical Manager can close month and create reports
+      allow create: if isAuthenticated() 
+        && isValidMonthlyReport(incoming())
+        && isTechnicalManager();
+      // Reports are immutable snapshots
+      allow update, delete: if false;
+    }
+
+    // 9. Audit Logs
+    match /audit_logs/{auditId} {
+      allow read: if isAuthenticated() && isTechnicalManager();
+      allow create: if isAuthenticated() 
+        && isValidAuditLog(incoming())
+        && isTechnicalManager();
+      allow update, delete: if false;
+    }
+  }
+}
