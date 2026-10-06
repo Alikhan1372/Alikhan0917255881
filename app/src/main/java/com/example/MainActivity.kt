@@ -1,7 +1,6 @@
 package com.example
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -21,10 +20,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.credentials.CredentialManager
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.exceptions.GetCredentialCancellationException
-import androidx.lifecycle.lifecycleScope
 import com.example.data.AuthRepository
 import com.example.data.EquipmentRepository
 import com.example.model.Equipment
@@ -42,12 +37,8 @@ import com.example.ui.screens.MonthlyScreen
 import com.example.ui.screens.OilChangeScreen
 import com.example.ui.theme.IndustrialPrimary
 import com.example.ui.theme.MyApplicationTheme
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestoreSettings
 import com.google.firebase.firestore.persistentCacheSettings
@@ -75,7 +66,6 @@ class MainActivity : ComponentActivity() {
 
         FirebaseApp.initializeApp(this)
 
-        // Initialize Firestore with custom DB ID and offline persistence
         val databaseId = getString(R.string.firestore_database_id)
         db = FirebaseFirestore.getInstance(databaseId)
         db.firestoreSettings = firestoreSettings {
@@ -85,79 +75,12 @@ class MainActivity : ComponentActivity() {
         authRepository = AuthRepository(applicationContext, db)
         equipmentRepository = EquipmentRepository(db)
 
-        // Silent/Interactive Google Sign-In setup for Firebase Backend
-        attemptSilentGoogleSignIn()
-
         setContent {
             MyApplicationTheme {
                 MainAppRoot(
                     authRepository = authRepository,
-                    equipmentRepository = equipmentRepository,
-                    onRequestInteractiveGoogleAuth = { launchInteractiveGoogleSignIn() }
+                    equipmentRepository = equipmentRepository
                 )
-            }
-        }
-    }
-
-    private fun attemptSilentGoogleSignIn() {
-        if (auth.currentUser != null) return
-
-        val serverClientId = getString(R.string.default_web_client_id)
-        val credentialManager = CredentialManager.create(this)
-
-        val googleIdOption = GetGoogleIdOption.Builder()
-            .setFilterByAuthorizedAccounts(true)
-            .setServerClientId(serverClientId)
-            .setAutoSelectEnabled(true)
-            .build()
-
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(googleIdOption)
-            .build()
-
-        lifecycleScope.launch {
-            try {
-                val result = credentialManager.getCredential(this@MainActivity, request)
-                val credential = result.credential
-                if (credential is androidx.credentials.CustomCredential &&
-                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-                ) {
-                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                    val authCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
-                    auth.signInWithCredential(authCredential)
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "Silent sign in not available; user will sign in if required: ${e.message}")
-            }
-        }
-    }
-
-    private fun launchInteractiveGoogleSignIn() {
-        val serverClientId = getString(R.string.default_web_client_id)
-        val credentialManager = CredentialManager.create(this)
-
-        val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(serverClientId)
-            .build()
-
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(signInWithGoogleOption)
-            .build()
-
-        lifecycleScope.launch {
-            try {
-                val result = credentialManager.getCredential(this@MainActivity, request)
-                val credential = result.credential
-                if (credential is androidx.credentials.CustomCredential &&
-                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-                ) {
-                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                    val authCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
-                    auth.signInWithCredential(authCredential)
-                }
-            } catch (e: GetCredentialCancellationException) {
-                Log.w(TAG, "User cancelled Google Sign-In bottom sheet", e)
-            } catch (e: Exception) {
-                Log.e(TAG, "Interactive Google sign-in failed", e)
             }
         }
     }
@@ -166,8 +89,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppRoot(
     authRepository: AuthRepository,
-    equipmentRepository: EquipmentRepository,
-    onRequestInteractiveGoogleAuth: () -> Unit
+    equipmentRepository: EquipmentRepository
 ) {
     val currentUser by authRepository.currentUser.collectAsState()
 

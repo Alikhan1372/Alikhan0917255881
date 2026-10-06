@@ -2,12 +2,14 @@ package com.example.model
 
 import com.google.firebase.Timestamp
 
-enum class UserRole(val titleFa: String) {
-    REPRESENTATIVE("نماینده"),
-    DRIVER("راننده"),
-    TECHNICAL_MANAGER("مسئول فنی");
+enum class UserRole(val firestoreValue: String, val titleFa: String) {
+    REPRESENTATIVE("representative", "نماینده"),
+    DRIVER("driver", "راننده"),
+    TECHNICAL_MANAGER("technical_manager", "مسئول فنی");
 
     companion object {
+        fun fromTrustedValue(role: String?): UserRole? = entries.firstOrNull { it.firestoreValue == role }
+
         fun fromString(role: String?): UserRole {
             return when (role?.lowercase()) {
                 "representative", "نماینده" -> REPRESENTATIVE
@@ -16,6 +18,19 @@ enum class UserRole(val titleFa: String) {
                 else -> DRIVER
             }
         }
+    }
+}
+
+enum class EquipmentAssignment(val firestoreValue: String, val equipmentId: String?) {
+    CATERPILLAR_988_G("CATERPILLAR_988_G", "loader_cat_988g"),
+    KOMATSU_600_3("KOMATSU_600_3", "loader_komatsu_600"),
+    DUMP_TRUCK("DUMP_TRUCK", "dump_truck"),
+    HYUNDAI_500("HYUNDAI_500", "excavator_hyundai_500"),
+    ALL("ALL", null);
+
+    companion object {
+        fun fromTrustedValue(value: String?): EquipmentAssignment? =
+            entries.firstOrNull { it.firestoreValue == value }
     }
 }
 

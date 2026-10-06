@@ -2,7 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- Core Security Helpers ---
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -40,17 +39,18 @@ service cloud.firestore {
     }
 
     function canLogWorkHours(equipId) {
-      return isTechnicalManager() 
+      return isTechnicalManager()
         || isRepresentative()
         || (isDriver() && assignedEquip() == equipId);
     }
 
-    // --- Entity Validation Helpers ---
     function isValidUser(data) {
       return data.userId is string && data.userId.size() > 0
         && data.username is string && data.username.size() > 0
         && data.displayName is string && data.displayName.size() > 0
+        && data.role is string
         && (data.role == 'representative' || data.role == 'driver' || data.role == 'technical_manager')
+        && ((data.assignedEquipmentId == null) || (data.assignedEquipmentId is string))
         && data.active is bool;
     }
 
@@ -122,95 +122,81 @@ service cloud.firestore {
         && data.userId is string && data.userId.size() > 0;
     }
 
-    // --- Strict Collection Rules (Default Deny, No Unauthenticated Access) ---
-
-    // 1. Users collection
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidUser(incoming());
-      allow update: if isAuthenticated() && isValidUser(incoming()) && (isTechnicalManager() || request.auth.uid == userId);
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if false;
+      allow update: if isAuthenticated()
+        && request.auth.uid == userId
+        && request.resource.data.userId == userId
+        && request.resource.data.username == resource.data.username
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.assignedEquipmentId == resource.data.assignedEquipmentId
+        && request.resource.data.active == resource.data.active
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0;
       allow delete: if false;
     }
 
-    // 2. Equipment collection
     match /equipment/{equipmentId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && isValidEquipment(incoming()) && (isTechnicalManager() || isRepresentative());
       allow delete: if false;
     }
 
-    // 3. Inventory collection
     match /inventory/{oilType} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && isValidInventory(incoming()) && (isTechnicalManager() || isRepresentative());
       allow delete: if false;
     }
 
-    // 4. Daily Work Hours
     match /daily_work_hours/{recordId} {
-      // Driver can only read work hours of their assigned equipment; Representative and Tech Manager read all
       allow read: if isAuthenticated() && (isTechnicalManager() || isRepresentative() || (isDriver() && resource.data.equipmentId == assignedEquip()));
-      // Driver can only log for their assigned equipment; Representative and Tech Manager for all
-      allow create: if isAuthenticated() 
+      allow create: if isAuthenticated()
         && isValidDailyWorkHour(incoming())
         && canLogWorkHours(incoming().equipmentId);
-      // Immutable: cannot be modified or deleted once recorded
       allow update, delete: if false;
     }
 
-    // 5. Daily Services
     match /daily_services/{recordId} {
       allow read: if isAuthenticated();
-      // Only Technical Manager can create or update daily services
-      allow create, update: if isAuthenticated() 
+      allow create, update: if isAuthenticated()
         && isValidDailyService(incoming())
         && isTechnicalManager();
       allow delete: if false;
     }
 
-    // 6. Oil Changes
     match /oil_changes/{recordId} {
       allow read: if isAuthenticated();
-      // Only Technical Manager can record oil changes
-      allow create, update: if isAuthenticated() 
+      allow create, update: if isAuthenticated()
         && isValidOilChange(incoming())
         && isTechnicalManager();
       allow delete: if false;
     }
 
-    // 7. Oil Transactions
     match /oil_transactions/{transactionId} {
       allow read: if isAuthenticated();
-      // Representative and Technical Manager can log incoming oil;
-      // Hydraulic overflow allowed for equipment drivers; other outflows strictly Technical Manager
-      allow create: if isAuthenticated() 
+      allow create: if isAuthenticated()
         && isValidOilTransaction(incoming())
-        && (incoming().direction == 'in' 
+        && (incoming().direction == 'in'
             ? (isRepresentative() || isTechnicalManager())
             : (incoming().sourceOperation == 'hydraulic_overflow' ? (isDriver() || isRepresentative() || isTechnicalManager()) : isTechnicalManager()));
-      // Controlled update only allowed by Technical Manager
-      allow update: if isAuthenticated() 
+      allow update: if isAuthenticated()
         && isValidOilTransaction(incoming())
         && isTechnicalManager();
-      // Strictly non-deletable
       allow delete: if false;
     }
 
-    // 8. Monthly Reports
     match /monthly_reports/{reportId} {
       allow read: if isAuthenticated();
-      // Only Technical Manager can close month and create reports
-      allow create: if isAuthenticated() 
+      allow create: if isAuthenticated()
         && isValidMonthlyReport(incoming())
         && isTechnicalManager();
-      // Reports are immutable snapshots
       allow update, delete: if false;
     }
 
-    // 9. Audit Logs
     match /audit_logs/{auditId} {
       allow read: if isAuthenticated() && isTechnicalManager();
-      allow create: if isAuthenticated() 
+      allow create: if isAuthenticated()
         && isValidAuditLog(incoming())
         && isTechnicalManager();
       allow update, delete: if false;

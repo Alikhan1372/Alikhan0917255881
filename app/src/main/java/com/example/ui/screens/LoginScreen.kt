@@ -55,7 +55,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.AuthRepository
-import com.example.data.UserAccounts
 import com.example.model.UserProfile
 import com.example.ui.theme.IndustrialAccent
 import com.example.ui.theme.IndustrialPrimary
@@ -242,43 +241,12 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Quick user selector for internal workshop use
             Text(
-                text = "انتخاب سریع کاربران تعریف‌شده:",
+                text = "برای ورود، نام کاربری حساب تأییدشده را وارد کنید.",
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.outline
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = TextAlign.Center
             )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                UserAccounts.predefinedAccounts.forEach { account ->
-                    val equipName = if (account.defaultProfile.assignedEquipmentId != null) {
-                        "(${account.defaultProfile.displayName})"
-                    } else {
-                        "(${account.defaultProfile.roleEnum.titleFa})"
-                    }
-                    FilterChip(
-                        selected = username.equals(account.username, ignoreCase = true),
-                        onClick = {
-                            username = account.username
-                            password = account.initialPassword
-                            errorMessage = null
-                        },
-                        label = {
-                            Text(
-                                text = "${account.defaultProfile.displayName} — ${account.defaultProfile.roleEnum.titleFa}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
         }
     }
 }

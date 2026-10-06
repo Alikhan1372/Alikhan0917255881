@@ -1,11 +1,14 @@
 package com.example.data
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.example.model.UserProfile
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,91 +18,93 @@ class AuthRepository(
     private val context: Context,
     private val db: FirebaseFirestore? = null
 ) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("app_auth_session", Context.MODE_PRIVATE)
+    companion object {
+        private const val ALIAS_DOMAIN = "accounts.example.invalid"
+        private const val LEGACY_SESSION_PREFERENCES = "app_auth_session"
+    }
 
+    private val prefs = context.getSharedPreferences(LEGACY_SESSION_PREFERENCES, Context.MODE_PRIVATE)
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
 
     private val _currentUser = MutableStateFlow<UserProfile?>(null)
     val currentUser: StateFlow<UserProfile?> = _currentUser.asStateFlow()
 
     init {
-        restoreSession()
+        prefs.edit().clear().apply()
+        if (auth.currentUser != null) {
+            CoroutineScope(Dispatchers.IO).launch {
+                _currentUser.value = resolveCurrentFirebaseSession()
+            }
+        }
     }
 
-    private fun restoreSession() {
-        // Must verify that both a valid local record exists AND Firebase Auth is active if initialized
-        val savedUsername = prefs.getString("saved_username", null)
-        if (!savedUsername.isNullOrEmpty()) {
-            val account = UserAccounts.findAccountByUsername(savedUsername)
-            if (account != null) {
-                val customDisplayName = prefs.getString("display_name_${account.defaultProfile.userId}", null)
-                val profile = if (!customDisplayName.isNullOrEmpty()) {
-                    account.defaultProfile.copy(displayName = customDisplayName)
-                } else {
-                    account.defaultProfile
-                }
-                _currentUser.value = profile
+    private suspend fun resolveCurrentFirebaseSession(): UserProfile? {
+        val firebaseUser = auth.currentUser ?: return null
+        val snapshot = db?.collection("users")?.document(firebaseUser.uid)?.get()?.await() ?: return null
+        if (!snapshot.exists()) {
+            auth.signOut()
+            return null
+        }
+
+        val validation = TrustedUserProfileValidator.validate(
+            uid = firebaseUser.uid,
+            email = firebaseUser.email,
+            aliasDomain = ALIAS_DOMAIN,
+            data = snapshot.data
+        )
+
+        return when (validation) {
+            is TrustedProfileValidation.Valid -> validation.profile.toAppProfile()
+            is TrustedProfileValidation.Rejected -> {
+                auth.signOut()
+                null
             }
         }
     }
 
     suspend fun login(username: String, password: String): Result<UserProfile> {
-        val account = UserAccounts.findAccountByUsername(username)
-            ?: return Result.failure(Exception("نام کاربری یا رمز عبور اشتباه است."))
-
-        if (account.initialPassword != password.trim()) {
-            return Result.failure(Exception("نام کاربری یا رمز عبور اشتباه است."))
+        val normalizedUsername = username.trim()
+        if (normalizedUsername.isEmpty() || password.isBlank()) {
+            return Result.failure(Exception("لطفاً نام کاربری و رمز عبور را وارد فرمایید."))
         }
 
-        if (!account.defaultProfile.active) {
-            return Result.failure(Exception("حساب کاربری شما غیرفعال شده است."))
+        val email = UsernameAliasMapper.toFirebaseEmail(normalizedUsername, ALIAS_DOMAIN)
+            ?: return Result.failure(Exception("نام کاربری وارد‌شده معتبر نیست."))
+
+        return try {
+            val credential = auth.signInWithEmailAndPassword(email, password.trim()).await()
+            val uid = credential.user?.uid ?: throw IllegalStateException("Firebase session is missing uid")
+
+            val trustedProfile = loadTrustedProfile(uid, email)
+                ?: return Result.failure(Exception("حساب کاربری شما فعال یا معتبر نیست."))
+
+            _currentUser.value = trustedProfile
+            Result.success(trustedProfile)
+        } catch (e: Exception) {
+            auth.signOut()
+            _currentUser.value = null
+            Result.failure(Exception(mapAuthFailure(e)))
         }
+    }
 
-        val customDisplayName = prefs.getString("display_name_${account.defaultProfile.userId}", null)
-        val profile = if (!customDisplayName.isNullOrEmpty()) {
-            account.defaultProfile.copy(displayName = customDisplayName)
-        } else {
-            account.defaultProfile
-        }
+    private suspend fun loadTrustedProfile(uid: String, email: String?): UserProfile? {
+        val snapshot = db?.collection("users")?.document(uid)?.get()?.await() ?: return null
+        if (!snapshot.exists()) return null
 
-        // Store active session
-        prefs.edit().putString("saved_username", account.username).apply()
-        _currentUser.value = profile
+        val validation = TrustedUserProfileValidator.validate(
+            uid = uid,
+            email = email,
+            aliasDomain = ALIAS_DOMAIN,
+            data = snapshot.data
+        )
 
-        // Sync and ensure user profile document in Firestore matches request.auth.uid and profile.userId
-        db?.let { firestore ->
-            val userPayload = mapOf(
-                "userId" to profile.userId,
-                "username" to profile.username,
-                "displayName" to profile.displayName,
-                "role" to profile.role,
-                "assignedEquipmentId" to profile.assignedEquipmentId,
-                "active" to profile.active
-            )
-
-            try {
-                // Save under profile.userId
-                firestore.collection("users").document(profile.userId).set(
-                    userPayload,
-                    SetOptions.merge()
-                ).await()
-
-                // Also save under auth.currentUser.uid if available
-                auth.currentUser?.uid?.let { authUid ->
-                    if (authUid != profile.userId) {
-                        firestore.collection("users").document(authUid).set(
-                            userPayload,
-                            SetOptions.merge()
-                        ).await()
-                    }
-                }
-            } catch (_: Exception) {
-                // Network buffering
+        return when (validation) {
+            is TrustedProfileValidation.Valid -> validation.profile.toAppProfile()
+            is TrustedProfileValidation.Rejected -> {
+                auth.signOut()
+                null
             }
         }
-
-        return Result.success(profile)
     }
 
     suspend fun updateDisplayName(newDisplayName: String): Result<UserProfile> {
@@ -108,31 +113,22 @@ class AuthRepository(
             return Result.failure(Exception("نام نمایشی نمی‌تواند خالی باشد."))
         }
 
-        val current = _currentUser.value
-            ?: return Result.failure(Exception("کاربر وارد نشده است."))
+        val current = _currentUser.value ?: return Result.failure(Exception("کاربر وارد نشده است."))
+        val uid = auth.currentUser?.uid ?: current.userId
 
-        // Business Rule: ONLY displayName can be edited by the user!
-        // username, password, role, assignedEquipmentId, userId are immutable.
         val updated = current.copy(displayName = trimmed)
-        prefs.edit().putString("display_name_${current.userId}", trimmed).apply()
         _currentUser.value = updated
 
-        // Sync with Firestore
         db?.let { firestore ->
             try {
-                firestore.collection("users").document(current.userId).update(
-                    "displayName", trimmed
+                firestore.collection("users").document(uid).set(
+                    mapOf(
+                        "displayName" to trimmed
+                    ),
+                    SetOptions.merge()
                 ).await()
-
-                auth.currentUser?.uid?.let { authUid ->
-                    if (authUid != current.userId) {
-                        firestore.collection("users").document(authUid).update(
-                            "displayName", trimmed
-                        ).await()
-                    }
-                }
             } catch (_: Exception) {
-                // Offline mode will buffer update
+                // App is intentionally strict; the source of truth remains the user profile on Firestore.
             }
         }
 
@@ -140,12 +136,23 @@ class AuthRepository(
     }
 
     fun logout() {
-        prefs.edit().remove("saved_username").apply()
         try {
             auth.signOut()
         } catch (_: Exception) { }
+        prefs.edit().clear().apply()
         _currentUser.value = null
     }
 
-    fun isLoggedIn(): Boolean = _currentUser.value != null
+    fun isLoggedIn(): Boolean = auth.currentUser != null && _currentUser.value != null
+
+    private fun mapAuthFailure(error: Exception): String {
+        return when (error) {
+            is FirebaseAuthException -> when (error.errorCode) {
+                "ERROR_INVALID_CREDENTIAL" -> "نام کاربری یا رمز عبور اشتباه است."
+                "ERROR_USER_DISABLED" -> "حساب کاربری شما غیرفعال شده است."
+                else -> "ورود ناموفق بود."
+            }
+            else -> error.localizedMessage ?: "ورود ناموفق بود."
+        }
+    }
 }

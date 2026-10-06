@@ -116,6 +116,25 @@ test("Unauthenticated user: CANNOT write work hours", async () => {
   );
 });
 
+test("Authenticated user: CANNOT read another user's profile", async () => {
+  const authDb = testEnv.authenticatedContext(MOHAMMAD_UID).firestore();
+  await assertFails(authDb.collection("users").doc(VAHID_UID).get());
+});
+
+test("Authenticated user: CANNOT create arbitrary admin-grade profile data", async () => {
+  const authDb = testEnv.authenticatedContext("new_user_uid").firestore();
+  await assertFails(
+    authDb.collection("users").doc("new_user_uid").set({
+      userId: "new_user_uid",
+      username: "attacker",
+      displayName: "Attacker",
+      role: "technical_manager",
+      assignedEquipmentId: "ALL",
+      active: true,
+    })
+  );
+});
+
 // -------------------------------------------------------------
 // Scenario 2: Driver Permissions & Isolation
 // -------------------------------------------------------------
